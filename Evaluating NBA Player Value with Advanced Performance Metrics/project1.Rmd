@@ -1,0 +1,923 @@
+---
+title: "project part 1"
+author: "Nicholas Mikhail and Pete Boyle"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tinytex)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+
+Source of Data and description of all relevant variables:
+
+For this project, we used three different Csv.
+1. the first csv is called "Seasons_Stats" and it has over 50 columns of statistics from the last 50 NBA seasons ending in 2017. We definitely are not using all of these columns stats, as the main ones we are focusing on are PER, and a created PPG column which I made by dividing total points by games played, both of which were available in the csv
+2. The second csv is called "nba_2016_17_salary" which had the salary for every player in the 2016 season
+3. The third csv is called "NBA_season1718_salary" and has the salary for each player in the 2017
+
+We then narrowed down the data to just be the years 2016 and 2017 as those were the years we had data for the players salary as well, and then we merged the salary datasets into the "Seasons_stats" so we could have all the necessary data in one csv file. 
+The relevant variables are, PPG (points scored per game), PER (player efficiency rating), SALARY (annual salary for each player)
+The observational unit is Player, or basically every nba player's name.
+
+```{r data cleanup}
+Seasons_Stats <- read.csv("~/statistical linear modeling /project/Seasons_Stats.csv")
+nba_2016_17_salary <- read.csv("~/statistical linear modeling /project/nba_2016-17_salary.csv")
+NBA_season1718_salary <- read.csv("~/statistical linear modeling /project/NBA_season1718_salary.csv")
+
+# Remove the columns 'blank2', 'blanl', and 'DRB%' from the data set
+Seasons_Stats <- Seasons_Stats[, !names(Seasons_Stats) %in% c("blank2", "blanl", "DRB%", "TS%", "TRB%")]
+
+# Filter the dataset for years after 2015
+Seasons_stats_2016_2017 <- subset(Seasons_Stats, Year > 2015)
+
+# Add a new column 'PPG' by dividing 'PTS' by 'G'
+Seasons_stats_2016_2017$PPG <- with(Seasons_stats_2016_2017, PTS / G)
+
+
+# Rename "NAME" column to "Player" in nba_2016_17_salary
+colnames(nba_2016_17_salary)[colnames(nba_2016_17_salary) == "NAME"] <- "Player"
+
+# Merge 'Seasons_stats_after_2010' with the 'SALARY' column from 'nba_2016_17_salary'
+merged_data <- merge(Seasons_stats_2016_2017, nba_2016_17_salary[, c("Player", "SALARY")], by = "Player")
+
+
+colnames(NBA_season1718_salary)[colnames(NBA_season1718_salary) == "season17_18"] <- "SALARY"
+
+# Merge with the 2017 salary data, adding suffixes to distinguish between the different salary columns
+merged_data_full <- merge(merged_data, NBA_season1718_salary[, c("Player", "SALARY")], by = "Player", all.x = TRUE, suffixes = c("", ".2017"))
+
+# Update the SALARY for 2017 entries
+merged_data_full$SALARY <- ifelse(merged_data_full$Year == 2017 & !is.na(merged_data_full$SALARY.2017), merged_data_full$SALARY.2017, merged_data_full$SALARY)
+
+# Remove the now unnecessary 'SALARY.2017' column
+merged_data_full$SALARY.2017 <- NULL
+
+# Rename merged_data_full 
+stats_2016_17_with_salary <- merged_data_full
+
+# divide salary by 1,000,000 so it works for graphs
+stats_2016_17_with_salary$SALARY <- stats_2016_17_with_salary$SALARY / 1e6
+```
+
+For now we are primarily looking at Salary and PER and PPG, but going forward, Here are some defintions of variables we might look at investigating:
+```{r}
+variable_table <- data.frame(
+  Variable = c("Salary", "MP", "PER", "3par", "OWS", "DWS", "WS/48", "BPM", "VORP", "EFG%", "PPG"),
+  Description = c("How much a player is paid for that season", "Minutes played that season", "Player efficiency rating (measures how efficient a player is per minute", "3-pointer attempt rate (what percent of shots are 3s", "Offensive win shares (how many win shares this player earned on offense", "Defensive win shares", "Win shares per 48, which is is win shares adjusted over a 48 minute game", "Box plus-minus, which uses a player’s box score information, position, and the team’s overall performance to estimate the player’s contribution in points above league average per 100 possessions played. BPM does not take into account playing time", "VORP is value above replacement player, which is like BPM but takes into account playing time", "Effective field goal %, which weights 3s to be more important than 2s", "Points per game")
+)
+
+print(variable_table)
+```
+
+
+
+Here are some graphs:
+
+```{r PER against salary graphs}
+#getting players that played at least 41 games (half the season)
+half_season <- subset(stats_2016_17_with_salary, G > 40)
+#getting players that played at least 41 games, and have the highest PER
+best_per <- subset(half_season, PER > 22.5)
+#getting players that played at least 41 games, and also have the worse value PER compared to salary
+worse_per <- subset(half_season, PER < 13)
+worse_per <- subset(worse_per, SALARY > 15 )
+# getting players that played at least 41 games and have the best value PER compared to salary
+best_value <- subset(half_season, PER > 20)
+best_value <- subset(best_value, SALARY < 10)
+
+
+# Reshaping the data to a long format
+best_per_long <- pivot_longer(best_per, 
+                              cols = c("PER", "SALARY"), 
+                              names_to = "Metric", 
+                              values_to = "Value")
+
+# Plotting
+ggplot(best_per_long, aes(x = Player, y = Value, fill = Metric)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) + 
+  scale_fill_manual(values = c("PER" = "blue", "SALARY" = "red")) + 
+  labs(x = "Player", y = "Value", fill = "Metric") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Comparison of PER and Salary for Best Performing Players")
+
+
+
+# Reshaping the data to a long format
+worse_per_long <- pivot_longer(worse_per, 
+                              cols = c("PER", "SALARY"), 
+                              names_to = "Metric", 
+                              values_to = "Value")
+# Plotting
+ggplot(worse_per_long, aes(x = Player, y = Value, fill = Metric)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) + 
+  scale_fill_manual(values = c("PER" = "blue", "SALARY" = "red")) + 
+  labs(x = "Player", y = "Value", fill = "Metric") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Comparison of PER and Salary for Worst Value Players")
+
+# Reshaping the data to a long format
+best_value_long <- pivot_longer(best_value, 
+                              cols = c("PER", "SALARY"), 
+                              names_to = "Metric", 
+                              values_to = "Value")
+
+# Plotting
+ggplot(best_value_long, aes(x = Player, y = Value, fill = Metric)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) + 
+  scale_fill_manual(values = c("PER" = "blue", "SALARY" = "red")) + 
+  labs(x = "Player", y = "Value", fill = "Metric") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Comparison of PER and Salary for Best Value Players")
+
+
+
+```
+These three graphs start to look at which players are providing the best and worst value. The first graph just shows the salaries for the players with the best PER over 2016 and 2017 seasons, which can also usually suggest the best overall performing players. The next two graphs provide better insight on the best and worst value contracts. One shows the lowest PER for players still getting paid at least 15 million annually, while the other shows the highest PER for players getting paid under 10 million annually. 
+
+
+```{r ppg against salary graph}
+# Filter to include only players with PPG >= 20.0
+high_scorers <- subset(stats_2016_17_with_salary, PPG >= 18.0)
+
+# Order players by PPG
+high_scorers <- high_scorers[order(-high_scorers$PPG),]
+# Ensure Player is treated as a factor for plotting
+high_scorers$Player <- factor(high_scorers$Player, levels = unique(high_scorers$Player))
+# Normalize SALARY to the same scale as PPG for visualization purposes
+max_ppg <- max(high_scorers$PPG, na.rm = TRUE)
+max_salary <- max(high_scorers$SALARY, na.rm = TRUE)
+high_scorers$SALARY_normalized <- (high_scorers$SALARY / max_salary) * max_ppg
+
+# Plot PPG (blue) and normalized Salary (red)
+ggplot(high_scorers, aes(x = Player)) +
+  geom_point(aes(y = PPG, color = "PPG")) +
+  geom_point(aes(y = SALARY_normalized, color = "Salary")) +
+  geom_line(aes(y = PPG, group = 1, color = "PPG")) +
+  geom_line(aes(y = SALARY_normalized, group = 1, color = "Salary")) +
+  scale_color_manual(values = c("PPG" = "blue", "Salary" = "red")) +
+  labs(x = "Player", y = "Value", title = "PPG and Salary for Players with PPG >= 18") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(legend.title = element_blank())  # Remove legend title
+
+```
+This Graph shows points per game and salary, portraying the players that averaged the highest points scored a game and what their salaries were for those years. The players that have 2 values for PPG or Salary means in both 2016 and 2017 they averaged over 18 points per game, and the players with only one point means that they only averaged over 18 points per game one of the two seasons, and the respective salary that year. 
+
+
+
+
+One interesting thing we discovered already that we might look further into is the amount of value playeres there are when it comes to PPG. Perhaps going forward we will look to the other stats to see if/how we can predict a player might produce great value for their salary amount. For this round we just looked at the disparity between best PER players and worst, going forward we will likely look to take a random sample of players from the season when we do any sort of regression analysis. Getting a random sample should be doable given the large amount of data points we have. 
+
+
+
+
+
+```{r echo=FALSE}
+stats_2016_salary <-  subset(stats_2016_17_with_salary, Year < 2017)
+stats_2016_salary <- stats_2016_salary[, !names(stats_2016_salary) %in% c("DRB", "ORB", "X2P", "TOV")]
+
+stats_2017_salary <-  subset(stats_2016_17_with_salary, Year > 2016)
+stats_2017_salary <- stats_2017_salary[, !names(stats_2017_salary) %in% c("DRB", "ORB", "X2P", "TOV")]
+
+```
+
+
+
+PART 2
+Intro
+	For the second part of our project, we looked to expand upon finding linear relationships in the NBA salary dataset we explored in Part 1 of the project. In our initial study, we looked into the relationship between what a player was paid vs. their actual performance on the court. We identified statistics such as points per game (PPG) and player efficiency rating (PER) to have potentially interesting relationships with salary. In this second report on our project, we continued to look at these variables, as well as a few more, and further expanded our study looking into the value of players (how well they play vs. how much they’re paid). We continued to utilize the NBA salary/stats data that we used before, but manipulated the data a bit (more on that ahead). The data we use is sourced from Kaggle, where a user scraped the components from basketballreference.com. Once again, we are using a specific collection of players as a sample to try to make claims about the greater population (all NBA players). 
+	Before we get into variables and our model, it is key to mention that our objective changed a bit. Our direction remained with value, but shifted a bit to a more specific problem, which is using statistics to try to predict what a given player will get paid in their next contract in free agency. Free agency in the NBA is a period over the summer where players whose contracts expired can either be re-signed by the team they just played for, or can go into the open market and have teams bid for them with certain contracts. Since our data spanned both the 2016 and 2017 seasons, we thought it would be interesting to look at the prospective free agents in 2016, take their stats, and predict what kind of salary they would be paid that summer. We could then compare it to what they actually ended up making. This brought our sample size down to around 61 players, which is notably small, but still gave us some interesting findings. 
+
+
+
+Exploring variables
+To identify which variables we should include in our model, we did a series of tests. First, we examined a table using the ggpairs() function in R: 
+
+```{r}
+require(GGally)
+ggpairs(stats_2016_salary, columns = c(5, 10, 21, 25, 48, 49))
+```
+Salary being our response variable, we identified what we thought could be some possible explanatory variables. We can see that PPG had the best correlation to salary, but the others were still worth looking at. Using this, along with our understanding of basketball, we collected a group of variables to test model combinations with: Age, PER, defensive win shares (DWS), box plus-minus (BPM), FG%, expected 3 point percentage (X3P), usage rate (USG), assist rate (AST), total rebound rate (TRB), and PPG. 
+
+
+
+
+```{r echo=FALSE, results='hide'}
+# Vector with the names of the players
+selected_players <- c(
+  "Arron Afflalo", "Tony Allen", "Luke Babbitt", "Ron Baker",
+  "Michael Beasley", "Tarik Black", "Bojan Bogdanovic", "Jose Calderon",
+  "Kentavious Caldwell-Pope", "Vince Carter", "Michael Carter-Williams",
+  "Omri Casspi", "Ian Clark", "Darren Collison",
+  "Nick Collison", "Jamal Crawford", "Stephen Curry",
+  "Kevin Durant", "Tyreke Evans", "Cristiano Felicio", "Raymond Felton",
+  "Danilo Gallinari", "Langston Galloway", "Pau Gasol", "Rudy Gay",
+  "Taj Gibson", "Manu Ginobili", "Jeff Green", "Blake Griffin",
+  "Tim Hardaway Jr.", "Udonis Haslem", "Gordon Hayward", "George Hill",
+  "Jrue Holiday", "Justin Holiday", "Andre Iguodala", "Serge Ibaka",
+  "Ersan Ilyasova", "Joe Ingles", "Jarrett Jack", "Jonas Jerebko",
+  "Amir Johnson", "James Johnson", "Kyle Korver", "Shane Larkin",
+  "Joffrey Lauvergne", "Shaun Livingston", "Kyle Lowry", "Shelvin Mack",
+  "Luc Mbah a Moute", "JaVale McGee", "Ben McLemore", "Jodie Meeks",
+  "Jordan Mickey", "CJ Miles", "Patty Mills", "Paul Millsap",
+  "Eric Moreland", "Nene", "Nerlens Noel", "Dirk Nowitzki",
+  "Kelly Olynyk", "Cedi Osman", "Zaza Pachulia", "Patrick Patterson",
+  "Brandon Paul", "Chris Paul*", "Mason Plumlee", "Otto Porter Jr.",
+  "Zach Randolph", "JJ Redick", "Willie Reed", "Andre Roberson", "Rajon Rondo", "Derrick Rose", "Mike Scott",
+  "Thabo Sefolosha", "Ramon Sessions", "Jonathon Simmons", "Donald Sloan",
+  "Tony Snell", "Jeff Teague", "Milos Teodosic", "David Theis",
+  "Anthony Tolliver", "PJ Tucker", "Dion Waiters", "David West",
+  "Alan Williams", "Derek Willis", "Jeff Withey",
+  "Nick Young", "Tyler Zeller", "Zhou Qi"
+)
+
+# Assuming your data frame is called 'stats_2016_17_with_salary'
+# and it has a column named 'PLAYER' that contains the player names
+filtered_stats2016 <- stats_2016_salary[stats_2016_salary$Player %in% selected_players, ]
+filtered_stats2016 <- distinct(filtered_stats2016, Player, .keep_all = TRUE)
+
+
+
+# Vector with the names of the players
+selected_players <- c(
+  "Arron Afflalo", "Tony Allen", "Luke Babbitt", "Ron Baker",
+  "Michael Beasley", "Tarik Black", "Bojan Bogdanovic", "Jose Calderon",
+  "Kentavious Caldwell-Pope", "Vince Carter", "Michael Carter-Williams",
+  "Omri Casspi", "Ian Clark", "Darren Collison",
+  "Nick Collison", "Jamal Crawford", "Stephen Curry",
+  "Kevin Durant", "Tyreke Evans", "Cristiano Felicio", "Raymond Felton",
+  "Danilo Gallinari", "Langston Galloway", "Pau Gasol", "Rudy Gay",
+  "Taj Gibson", "Manu Ginobili", "Jeff Green", "Blake Griffin",
+  "Tim Hardaway Jr.", "Udonis Haslem", "Gordon Hayward", "George Hill",
+  "Jrue Holiday", "Justin Holiday", "Andre Iguodala", "Serge Ibaka",
+  "Ersan Ilyasova", "Joe Ingles", "Jarrett Jack", "Jonas Jerebko",
+  "Amir Johnson", "James Johnson", "Kyle Korver", "Shane Larkin",
+  "Joffrey Lauvergne", "Shaun Livingston", "Kyle Lowry", "Shelvin Mack",
+  "Luc Mbah a Moute", "JaVale McGee", "Ben McLemore", "Jodie Meeks",
+  "Jordan Mickey", "CJ Miles", "Patty Mills", "Paul Millsap",
+  "Eric Moreland", "Nene", "Nerlens Noel", "Dirk Nowitzki",
+  "Kelly Olynyk", "Cedi Osman", "Zaza Pachulia", "Patrick Patterson",
+  "Brandon Paul", "Chris Paul*", "Mason Plumlee", "Otto Porter Jr.",
+  "Zach Randolph", "JJ Redick", "Willie Reed", "Andre Roberson",
+  "Rajon Rondo", "Derrick Rose", "Mike Scott",
+  "Thabo Sefolosha", "Ramon Sessions", "Jonathon Simmons", "Donald Sloan",
+  "Tony Snell", "Jeff Teague", "Milos Teodosic", "David Theis",
+  "Anthony Tolliver", "PJ Tucker", "Dion Waiters", "David West",
+  "Alan Williams", "Derek Willis", "Jeff Withey",
+  "Nick Young", "Tyler Zeller", "Zhou Qi"
+)
+
+# Assuming your data frame is called 'stats_2016_17_with_salary'
+# and it has a column named 'PLAYER' that contains the player names
+filtered_stats2017 <- stats_2017_salary[stats_2017_salary$Player %in% selected_players, ]
+filtered_stats2017 <- na.omit(filtered_stats2017)
+# Get unique records ensuring each player's name appears once, keeping all associated data of the first occurrence
+filtered_stats2017 <- distinct(filtered_stats2017, Player, .keep_all = TRUE)
+
+
+```
+
+```{r echo=FALSE}
+
+# Correcting the column names if they include periods
+filtered2_stats2016 <- filtered_stats2016[, c("Age", "PER", "DWS", "BPM", "FG.", "X3P.", "USG.", "AST.", "TRB.", "SALARY", "PPG")]
+
+# Removing rows with any NA values from the dataset
+ommited_stats2016 <- na.omit(filtered2_stats2016)
+
+
+
+
+
+library(openintro)
+library(leaps)
+require(broom)
+library(GGally)
+library(ISLR)
+```
+
+
+``` {r}
+max_var <- 10  # Assuming 'SALARY' is one of the columns, and you want to include all other variables
+
+col_best_lm <- regsubsets(SALARY ~ ., data = filtered2_stats2016, 
+                          nvmax = max_var)
+col_best_lm %>%
+  tidy()
+
+col_best_lm %>%
+  coef(5)  # pull out the best 5 variable model
+
+
+col_best_summary <- summary(col_best_lm)
+
+# You can then access the R-squared, adjusted R-squared, BIC, and Mallows Cp like this:
+rsq <- col_best_summary$rsq
+adjr2 <- col_best_summary$adjr2
+bic <- col_best_summary$bic
+cp <- col_best_summary$cp
+
+# To view them, you can put them in a data frame
+results <- data.frame(
+  R.Squared = rsq,
+  Adjusted.R.Squared = adjr2,
+  BIC = bic,
+  Mallows.Cp = cp
+)
+
+# Print the results
+print(results)
+
+
+```
+
+
+```{r}
+regfit.full <- regsubsets(SALARY ~ ., data = filtered2_stats2016, 
+                           nvmax=NCOL(filtered2_stats2016)-1)
+
+# Extract the summary of the regsubsets object
+reg.summary <- summary(regfit.full)
+reg.summary
+
+
+# Coefficient for best model according to Cp
+reg.summary <- summary(regfit.full)
+best.cp.model <- which.min(reg.summary$cp)
+reg.summary$cp[best.cp.model]
+
+# Coefficient for best model according to Adjusted R squared
+reg.summary <- summary(regfit.full)
+best.adjr2.model <- which.max(reg.summary$adjr2)
+reg.summary$adjr2[best.adjr2.model]
+
+
+# Coefficients for best model according to BIC
+reg.summary <- summary(regfit.full)
+best.bic.model <- which.min(reg.summary$bic)
+reg.summary$bic[best.bic.model]
+```
+
+
+Selecting a Model
+Using the regsubsets() function in R, we were able to try a best subset selection approach to model selection. For each amount of variables, the output informed us which explanatory variables to select along with that model’s adjusted R2 , BIC, and Cp values. From our studies, we know to look for models with higher adjusted R2 and a lower BIC and Cp values. Those three respective models were:
+  R2 model: B0 +B1Age+B2PER +B3DWS +B4PPG + B55TR
+  BIC model: B0 +B1Age + B2PPG
+  Cp model: B0 + B1Age + B2DWS + B3PPG
+Identifying these became easy using a graph like such: 
+
+
+```{r}
+plot(reg.summary$adjr2, xlab="Number of Variables", ylab="Adjusted R^2", type="o")
+points(which.max(reg.summary$adjr2), reg.summary$adjr2[which.max(reg.summary$adjr2)], col="red", cex=2, pch=20)
+
+
+plot(reg.summary$cp, xlab="Number of Variables", ylab="Cp", type="o")
+points(which.min(reg.summary$cp), reg.summary$cp[which.min(reg.summary$cp)], col="red", cex=2, pch=20)
+
+plot(reg.summary$bic, xlab="Number of Variables", ylab="BIC", type="o")
+points(which.min(reg.summary$bic), reg.summary$bic[which.min(reg.summary$bic)], col="red", cex=2, pch=20)
+
+```
+
+```{r}
+# Fit the models
+model_adjr2 <- lm(SALARY ~ Age + PER + DWS + PPG + TRB., data = filtered2_stats2016)
+
+model_cp <- lm(SALARY ~ Age + DWS + PPG, data = filtered2_stats2016)
+
+model_bic <-  lm(SALARY ~ Age + PPG, data = filtered2_stats2016)
+
+# Summarize the models
+summary(model_adjr2)
+summary(model_cp)
+summary(model_bic)
+```
+
+```{r}
+stats::step(lm(SALARY ~ 1, data = ommited_stats2016),
+SALARY ~ Age +PER+ DWS+ BPM+ FG. +X3P.+ USG.+ AST.+ TRB.+ PPG,
+direction = "forward", test = "F")
+```
+
+
+```{r}
+stats::step(lm(SALARY ~ Age +PER+ DWS+ BPM+ FG. +X3P.+ USG.+ AST.+ TRB.+ PPG, data=ommited_stats2016),
+SALARY ~ Age +PER+ DWS+ BPM+ FG. +X3P.+ USG.+ AST.+ TRB.+ PPG,
+direction = "backward", test = "F")
+```
+
+
+Not only did we look at best subset selection, but we also ran code in R for forward and backward selection with F-tests. 
+
+
+```{r}
+model_adjr2 %>%
+augment(newdata = filtered2_stats2016) %>% mutate(resid=.fitted-SALARY)%>% summarize(SSEtest=sum(resid^2))
+
+predictions <- predict(model_adjr2, newdata = filtered2_stats2016)  # get model predictions
+actuals <- filtered_stats2017$SALARY  
+mse <- mean((predictions - actuals)^2)
+print(mse)
+
+model_cp %>%
+augment(newdata = filtered2_stats2016) %>% mutate(resid=.fitted-SALARY)%>% summarize(SSEtest=sum(resid^2))
+
+predictions2 <- predict(model_cp, newdata = filtered2_stats2016)  # get model predictions
+actuals2 <- filtered_stats2017$SALARY  
+mse2 <- mean((predictions2 - actuals2)^2)
+print(mse2)
+
+
+model_bic %>%
+augment(newdata = filtered2_stats2016) %>% mutate(resid=.fitted-SALARY)%>% summarize(SSEtest=sum(resid^2))
+
+predictions3 <- predict(model_bic, newdata = filtered2_stats2016)  # get model predictions
+actuals3 <- filtered_stats2017$SALARY  
+mse3 <- mean((predictions3 - actuals3)^2)
+print(mse3)
+
+
+
+forward_model <- lm(SALARY ~ Age +PER+ DWS+ BPM+ USG.+ AST.+ PPG, data = filtered2_stats2016)
+forward_model %>%
+augment(newdata = filtered2_stats2016) %>% mutate(resid=.fitted-SALARY)%>% summarize(SSEtest=sum(resid^2))
+
+predictions4 <- predict(forward_model, newdata = filtered2_stats2016)  # get model predictions
+actuals4 <- filtered_stats2017$SALARY  
+mse4 <- mean((predictions4 - actuals4)^2)
+print(mse4)
+
+
+backward_model <- lm(SALARY ~ Age + PPG + DWS + PER, data = filtered2_stats2016)
+backward_model %>%
+augment(newdata = filtered2_stats2016) %>% mutate(resid=.fitted-SALARY)%>% summarize(SSEtest=sum(resid^2))
+
+predictions5 <- predict(backward_model, newdata = filtered2_stats2016)  # get model predictions
+actuals5 <- filtered_stats2017$SALARY  
+mse5 <- mean((predictions5 - actuals5)^2)
+print(mse5)
+
+
+
+
+
+```
+
+Above is a snapshot of the summary from our forward stepwise selection, where we see our largest jump in AIC value. We also see many more variables become significant in this step. A similar trend was seen in selecting the backward model. Those two looked like such: 
+	Forward Model: B0 +B1Age + B2PER + B3DWS + B4PPG + B5AST + B6BPM + B7USG
+	Backward Model: B0 + B1Age + B2DWS + B3PPG +B4PER
+With five available models to pick from, all for separate reasons, we decided to look at the mean squared error of each of the models. We calculated this by looking at what each of the models projected as a salary for each of the players and compared that to the 2017 data which contained what they were actually paid. The 2017 data is acting as our test data in this instance. Taking the mean of the squared errors gave us an idea of how off each of the models were in their predictions, with a lower MSE being better. Two of the models tied for the lowest MSE at around 47 ;), one being the Cp model and one being the backward selection model. The only difference between the two models was that the backward model contained PER and the Cp did not. Taking all of the numbers into account, along with the situation we had with the data, we decided to go with the simpler model, the Cp model. It encapsulates age, PPG, and DWS. 
+
+
+```{r}
+residual_data <- data.frame(
+  Fitted = fitted(model_cp),
+  Residuals = residuals(model_cp)
+)
+
+ggplot(residual_data, aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(x = "Fitted Values", y = "Residuals", title = "Residual vs. Fitted Plot") +
+  theme_minimal()
+```
+Residuals 
+For the Cp model, above is what our residual plot looked like. Given our smaller sample size, it is promising to see a balanced distribution about the zero line (which is what the expected residual would be). There are a few points such as the one in the bottom right corner that could be troubling; three of our points have a residual greater than |10|. 
+
+
+
+
+Coefficients
+	The B coefficients in our model are as follows: B0: -11.2271, B1: 0.3832, B2: 0.6737, B3: 0.6810. Three of our four coefficients are significant. We can see that PPG has *** significance, while B0 and Age have ** significance. DWS has a significance of 0.19, so not very significant, but DWS is a bit of a flawed stat. However, we think it is important to at least try to cover defense in our model, so we kept it in. 
+
+
+```{r echo=FALSE, results='hide'}
+library(dplyr)
+#combined_data <- merge(predictions2, filtered_stats2017, by = "Player", all = TRUE)
+# Convert predictions2 vector to a data frame
+
+player_names_df  <- filtered_stats2017$Player 
+Player  <- data.frame(player_names_df)
+
+predictions2_df <- data.frame(Player = player_names_df, SALARY = predictions2)
+
+combined_data <- merge(predictions2_df, filtered_stats2017, by = "Player", all = TRUE)
+
+combined_data <- combined_data %>%
+  rename(
+    projected.salary = SALARY.x,
+    actual.salary = SALARY.y
+  )
+combined_data <- combined_data %>%
+  select(Player, actual.salary, everything())
+combined_data
+
+```
+
+
+
+To see how well we predicted free agent’s salaries, we plotted our expected salary values vs. what they actually got.
+```{r fig.width=12, fig.height=6}
+library(tidyr)
+# Assuming combined_data is your dataframe
+combined_data_long <- pivot_longer(combined_data,
+                                   cols = c("projected.salary", "actual.salary"),
+                                   names_to = "Salary_Type",
+                                   values_to = "Salary")
+
+
+
+library(ggplot2)
+
+ggplot(combined_data_long, aes(x = Player, y = Salary, fill = Salary_Type)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.7)) +
+    labs(x = "Player", y = "Salary (Millions)", title = "Comparison of Salaries") +
+    theme_minimal() +
+    theme(
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 14), # X-axis text size
+        axis.text.y = element_text(size = 18), # Y-axis text size
+        axis.title.x = element_text(size = 20), # X-axis title size
+        axis.title.y = element_text(size = 20), # Y-axis title size
+        plot.title = element_text(size = 20, hjust = 0.5), # Plot title size
+        legend.title = element_text(size = 20), # Legend title size
+        legend.text = element_text(size = 18) # Legend text size
+    )
+
+
+
+```
+
+
+This graph shows our general trend of underestimating player salaries. The cases where we overestimate, such as Dirk Nowitski, Michael Beasley, and Rajon Rondo, all are old players. While our model takes into account age, the reality is that once players become extremely old basketball-wise (into their late 30s), they go on what are called “veteran-minimum contracts”. These contracts are low-paying. This does not apply to every old player, but quite a few. There are a few reasons our model might be underestimating player salaries. The year before 2016, the salary cap jumped from $70 million to $94 million, which was and still is the largest salary cap jump in NBA history. When this cap jump occurred, players salaries did as well, and the players we are looking at in our sample were all on salaries that were established before this new massive cap. Our model does not take this cap jump into account, thus we are underestimating most players. 
+
+In terms of the actual components of our model, we find that it makes a good amount of sense looking at the terms we ended up selecting. PPG is the most important stat given that points are what win games, DWS brings in the defensive aspect of basketball, which is half of the game, and age demonstrates a players ability to stay in the league. Oftentimes a player who has made it to their late 20s in the league is a solid-good player and thus will be making more money. Obviously there are many more components that go into what a player will be paid; we a stat sheet won’t show how good of a teammate a player is, it won’t show a team’s salary cap situation, it won’t show a player’s situation off the court. Teams take into account so much more than just stats when offering a player a contract, but we think it is still interesting to see how close we can get in predicting salaries. Going forward in our project, we will look to fully employ a testing/training data setup, and we will look to incorporate some new strategies to examine the data. We might do some sort of ridge regression or we might do something having to do with time series: the possibilities are endless. We will use the 2016 data that we just used to predict their salaries as our training data, and will then test our model on 2017 players and try to project their potential stats.
+
+```{r}
+library(car)
+library(olsrr)
+ols_plot_resid_stud_fit(model_cp, threshold = 2.5, print_plot = TRUE)
+outlierTest(model_cp, cutoff = 0.01)
+```
+
+```{r}
+col_augment <- model_cp %>% augment() %>%
+  mutate(Player = row.names(combined_data))
+```
+
+
+```{r}
+combined_data$dffits <- dffits(model_cp)
+combined_data$dffits <- dfbetas(model_cp)
+combined_data$cooksd <- cooks.distance(model_cp)
+col_augment$cooksd <- cooks.distance(model_cp)
+
+```
+```{r}
+ggplot(data = col_augment) +
+  geom_point(aes(x = 1:61, y = .cooksd))
+```
+
+
+
+```{r}
+position_codes <- setNames(c(1, 2, 3, 4, 5), c("PG", "SG", "SF", "PF", "C"))
+stats_2016_salary$Pos <- position_codes[stats_2016_salary$Pos]
+
+stats_2016_salary <- subset(stats_2016_salary, select = -Tm)
+```
+
+
+```{r}
+player_names_2016statssalary <- stats_2016_salary$Player  # Store player names
+stats_2016_salary <- subset(stats_2016_salary, select = -Player)
+  # Remove names from the main dataset
+
+# Later, you can reference 'player_names' to relate findings back to individuals
+stats_2016_salary <- na.omit(stats_2016_salary)
+
+
+
+```
+
+```{r}
+library(rsample)
+split_stats_2016_salary <- initial_split(stats_2016_salary, prop = 8.5/10)
+train_stats_2016_salary <- training(split_stats_2016_salary) 
+test_stats_2016_salary <- testing(split_stats_2016_salary)
+```
+
+
+
+RIDGE REGRESSION
+```{r}
+library(glmnet)
+train_x_ridge <- as.matrix(train_stats_2016_salary [, -which(names(train_stats_2016_salary) == "SALARY")])
+train_y_ridge <- train_stats_2016_salary$SALARY
+
+
+test_x <- model.matrix(~ . - SALARY, data = test_stats_2016_salary)[, -1]  
+test_y <- test_stats_2016_salary$SALARY  # This assumes SALARY is the target variable in your test dataset
+
+
+```
+
+```{r}
+set.seed(123)  # for reproducibility
+ridge_model <- glmnet(train_x_ridge, train_y_ridge, alpha = 0)
+cv_ridge <- cv.glmnet(train_x_ridge, train_y_ridge, alpha = 0, nfolds = 10)
+best_lambda <- cv_ridge$lambda.min  # lambda that gives minimum mean cross-validated error
+
+best_lambda
+
+```
+
+```{r}
+coefficients <- coef(ridge_model, s = best_lambda)  # Extract coefficients at the selected lambda
+# Convert to a regular numeric vector, removing the intercept if not needed
+coef_vector <- as.numeric(coefficients[-1])
+names(coef_vector) <- colnames(train_x_ridge)  # Assuming 'x' is your model matrix from training
+important_vars_ridge <- sort(abs(coef_vector), decreasing = TRUE)
+
+
+
+
+ridge_predictions <- predict(ridge_model, newx = test_x, s = best_lambda)
+
+
+```
+
+```{r}
+library(ggplot2)
+coef_data <- data.frame(Variable = names(important_vars_ridge), Coef = important_vars_ridge)
+
+ggplot(coef_data, aes(x = reorder(Variable, Coef), y = Coef)) +
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(title = "Variable Importance in Ridge Regression",
+         x = "Variable",
+         y = "Coefficient Magnitude") +
+    coord_flip()  # Flipping coordinates for easier reading of variable names
+
+```
+```{r}
+# Assuming you have 'predictions' from your ridge model and 'actuals' from your test data
+ridge_predictions <- predict(ridge_model, newx = test_x, s = best_lambda)
+actuals <- test_y  # Assuming test_y contains the actual salary values
+
+# Calculate RMSE
+rmse <- sqrt(mean((ridge_predictions - actuals)^2))
+
+# Calculate MAE
+mae <- mean(abs(ridge_predictions - actuals))
+
+# Calculate R-squared
+rss <- sum((ridge_predictions - actuals)^2)
+tss <- sum((ridge_predictions - mean(actuals))^2)
+r_squared <- 1 - (rss/tss)
+
+# Print the metrics
+print(paste("RMSE:", rmse))
+print(paste("MAE:", mae))
+print(paste("R-squared:", r_squared))
+
+
+library(ggplot2)
+
+# Residual plot
+residuals <- actuals - ridge_predictions
+ggplot(data = NULL, aes(x = ridge_predictions, y = residuals)) +
+    geom_point() +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    labs(title = "Residual Plot", x = "Predicted Values", y = "Residuals")
+
+# Actual vs Predicted plot
+ggplot(data = NULL, aes(x = actuals, y = ridge_predictions)) +
+    geom_point() +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+    labs(title = "Actual vs. Predicted", x = "Actual Values", y = "Predicted Values")
+
+
+```
+
+LASSO
+
+```{r}
+set.seed(123)  # Set seed for reproducibility
+cv_lasso <- cv.glmnet(train_x_ridge, train_y_ridge, alpha = 1, type.measure = "mse", nfolds = 10)
+
+best_lambda_lasso <- cv_lasso$lambda.min  # Lambda with minimum MSE
+lambda_1se_lasso <- cv_lasso$lambda.1se  # More conservative choice
+
+
+plot(cv_lasso)
+
+
+```
+```{r}
+final_lasso_model <- glmnet(train_x_ridge, train_y_ridge, alpha = 1, lambda = best_lambda_lasso)
+
+lasso_coefficients <- coef(final_lasso_model, s = best_lambda_lasso)
+print(lasso_coefficients)
+
+
+predictions_lasso <- predict(final_lasso_model, newx = test_x, s = best_lambda_lasso)
+```
+```{r}
+rmse <- sqrt(mean((predictions_lasso - actuals)^2))
+
+# Calculate MAE
+mae <- mean(abs(predictions_lasso - actuals))
+
+# Calculate R-squared
+ss_res <- sum((actuals - predictions_lasso)^2)  # Sum of squares of residuals
+ss_tot <- sum((actuals - mean(actuals))^2)  # Total sum of squares
+r_squared <- 1 - ss_res / ss_tot
+
+# Print the metrics
+print(paste("RMSE:", rmse))
+print(paste("MAE:", mae))
+print(paste("R-squared:", r_squared))
+
+
+
+
+
+ggplot(data = NULL, aes(x = actuals, y = predictions_lasso)) +
+    geom_point() +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+    labs(title = "Actual vs. Predicted", x = "Actual Values", y = "Predicted Values")
+
+```
+
+```{r}
+#testing cp_model on training data
+test_x_df <- as.data.frame(test_x)
+cp_predictions <- predict(model_cp, newdata = test_x_df)
+
+```
+
+
+
+
+```{r}
+library(tidyr)
+
+
+
+# Ensure 'cp_predictions' contains the predictions from the 'model_cp'
+# and that 'ridge_predictions' and 'lasso_predictions' are already defined as previously
+data_to_plot <- data.frame(
+    Actual = test_y,
+    Ridge_Predicted = as.numeric(ridge_predictions),
+    Lasso_Predicted = as.numeric(predictions_lasso),
+    CP_Predicted = as.numeric(cp_predictions)  # Ensure conversion to numeric if not already
+)
+
+
+# Reshape the data
+data_long <- pivot_longer(
+    data_to_plot,
+    cols = c("Ridge_Predicted", "Lasso_Predicted", "CP_Predicted"),
+    names_to = "Model",
+    values_to = "Predicted"
+)
+
+
+# Load the ggplot2 package if not already loaded
+library(ggplot2)
+
+# Create the scatter plot
+ggplot(data_long, aes(x = Actual, y = Predicted, color = Model)) +
+    geom_point(alpha = 0.6, size = 3) +  # Increase the size parameter as needed
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black") +
+    labs(title = "Actual vs. Predicted Values Comparison",
+         x = "Actual Values",
+         y = "Predicted Values") +
+    scale_color_manual(values = c("Ridge_Predicted" = "blue", "Lasso_Predicted" = "red", "CP_Predicted" = "darkgreen")) +
+    theme_minimal() +
+    theme(legend.title = element_blank())
+
+
+```
+
+SMOOTHING
+```{r}
+# Fitting smoothing spline models with varying degrees of freedom
+spline_model1 <- smooth.spline(stats_2016_salary$GS, stats_2016_salary$PPG, df = 2)
+spline_model2 <- smooth.spline(stats_2016_salary$GS, stats_2016_salary$PPG, df = 5)
+spline_model3 <- smooth.spline(stats_2016_salary$GS, stats_2016_salary$PPG, spar = 0.25)
+spline_model4 <- smooth.spline(stats_2016_salary$GS, stats_2016_salary$PPG, spar = 0.65)
+
+
+
+# Assuming 'spline_model1', 'spline_model2', etc., are your smoothing spline objects
+data_spline1 <- data.frame(GS = spline_model1$x, PPG = predict(spline_model1)$y)
+data_spline2 <- data.frame(GS = spline_model2$x, PPG = predict(spline_model2)$y)
+data_spline3 <- data.frame(GS = spline_model3$x, PPG = predict(spline_model3)$y)
+data_spline4 <- data.frame(GS = spline_model4$x, PPG = predict(spline_model4)$y)
+
+
+
+```
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# Basic plot setup
+base_plot <- ggplot(stats_2016_salary, aes(x = GS, y = PPG)) + 
+  geom_point(alpha = 0.5) + 
+  theme_minimal()
+
+# Add smoothing spline predictions
+plot_spline <- base_plot +
+  geom_line(data = data_spline1, aes(x = GS, y = PPG), col = "blue") +
+  geom_line(data = data_spline2, aes(x = GS, y = PPG), col = "green") +
+  geom_line(data = data_spline3, aes(x = GS, y = PPG), col = "red") +
+  geom_line(data = data_spline4, aes(x = GS, y = PPG), col = "purple") +
+  labs(title = "Smoothing Spline Models")
+
+
+# Add loess predictions
+plot_loess <- base_plot +
+  geom_smooth(method = "loess", span = 0.7, col = "blue", se = FALSE) +
+  geom_smooth(method = "loess", span = 0.25, col = "green", se = FALSE) +
+  geom_smooth(method = "loess", span = 0.5, col = "red", se = FALSE) +
+  geom_smooth(method = "loess", span = 5.0, col = "purple", se = FALSE) +
+  labs(title = "Loess Smoother Models")
+
+# Display plots side by side
+grid.arrange(plot_spline, plot_loess, ncol = 2)
+
+```
+would probably choose the green or purple lines from the spline models (df = 5, or spar =0.65) as they both seem to capture the data but also dont overfit and is not as volatile as some of the other ones. From Loess smoother models I would probably select the model with span = 0.25 as that doesnt overfit while the otehr three either overfit or underfit and that one has the best variance bias tradeoff
+
+
+
+SOMETHING NEW
+
+```{r}
+stats_2017_salary$scored_20_plus <- as.integer(stats_2017_salary$PPG >= 20)
+stats_2017_salary$Pos <- position_codes[stats_2017_salary$Pos]
+
+# Aggregate data to get the count of games scoring 20+ points by player per season
+stats_2017_salary_aggregated <- aggregate(GS ~ Player + SALARY + Pos + MP + PPG + Age + AST. + TRB. + DWS, data = stats_2017_salary, sum)
+```
+
+```{r}
+library(glm2)
+
+poisson_model <- glm(GS ~ SALARY + Pos + MP + PPG + Age + AST. + TRB. + DWS, family = poisson(), data = stats_2017_salary_aggregated)
+
+# Summary of the model to see the effects
+summary(poisson_model)
+
+```
+
+
+```{r}
+plot(residuals(poisson_model, type = "deviance") ~ fitted(poisson_model),
+     xlab = "Fitted values",
+     ylab = "Deviance residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, col = "red")
+
+library(ggplot2)
+actual_vs_predicted <- data.frame(Actual = stats_2017_salary_aggregated$GS,
+                                  Predicted = predict(poisson_model, type = "response"))
+
+ggplot(actual_vs_predicted, aes(x = Actual, y = Predicted)) +
+    geom_point() +
+    geom_line(aes(x = Actual, y = Actual), color = "red") +  # Adds a y=x reference line
+    labs(x = "Actual Counts", y = "Predicted Counts", title = "Actual vs. Predicted Games Started Counts") +
+    theme_minimal()
+
+
+```
+
+
+
+because the 0 outcomes were higher then poisson predicted
+```{r}
+library(pscl)
+zip_model <- zeroinfl(GS ~ SALARY + Pos + MP + PPG + Age + AST. + TRB. + DWS, data = stats_2017_salary_aggregated, dist = "poisson")
+summary(zip_model)
+
+```
+
