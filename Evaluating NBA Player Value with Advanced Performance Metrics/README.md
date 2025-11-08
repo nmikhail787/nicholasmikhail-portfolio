@@ -1,1 +1,1 @@
-
+This project links NBA player salary data with on-court performance metrics to identify mispriced players and contracts. Using multi-season data and stats such as PER, PPG, Win Shares, BPM, VORP, and shooting efficiency, it builds a custom “value” metric to compare what players are paid versus how much they produce. The analysis highlights both overvalued and undervalued players and explores patterns in inefficient spending across teams.
