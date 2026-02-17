@@ -339,4 +339,8 @@ MIT License - Free for any purpose.
 
 ## Author
 
-Created as a take home assignment demonstrating production quality scraping for AI workflows, building on experience developing similar automated data pipelines in production environments.
+After developing an automated data pipeline for test case extraction at my previous internship (which achieved 90%+ efficiency gains), I wanted to explore how those same engineering principles apply to different data collection challenges. 
+
+This project demonstrates that whether you're scraping internal tools for process automation or public websites for AI training data, the core engineering patterns remain consistent: intelligent extraction, robust error handling, metadata enrichment, and clean output formatting.
+
+Building this also gave me hands-on experience with the full data pipeline that powers modern AI systems—from raw web content to structured, queryable documents ready for RAG or semantic search.
